@@ -1,0 +1,10 @@
+Flask==3.0.3
+Flask-JWT-Extended==4.6.0
+Flask-CORS==4.0.1
+PyMySQL==1.1.1
+bcrypt==4.2.0
+python-dotenv==1.0.1
+cloudinary==1.41.0
+fpdf2==2.7.9
+gunicorn==22.0.0
+cryptography==43.0.1
