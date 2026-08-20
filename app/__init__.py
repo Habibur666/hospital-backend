@@ -79,7 +79,6 @@ def create_app():
         return fail("Token has been revoked, please log in again", 401)
 
     # ---- CORS ----
-    # CORS(app, origins=app.config["CORS_ORIGINS"], supports_credentials=True)
     CORS(app, origins=app.config["CORS_ORIGINS"], supports_credentials=True)
 
     # ---- Register every module (blueprint) ----

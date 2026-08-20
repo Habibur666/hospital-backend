@@ -77,23 +77,7 @@ API runs at `http://localhost:5000`. Health check: `GET /health`.
 
 ## Quick walkthrough of a typical flow
 
-```bash
-# 1. Register a hospital admin
-POST /api/v1/auth/register
-{ "first_name": "Ava", "last_name": "Admin", "email": "ava@hospital.com",
-  "password": "Str0ng!Pass", "role": "hospital_admin" }
 
-# 2. Log in to get tokens
-POST /api/v1/auth/login
-{ "email": "ava@hospital.com", "password": "Str0ng!Pass" }
--> returns { access_token, refresh_token, user }
-
-# 3. Use the access token as a Bearer token on every other request
-Authorization: Bearer <access_token>
-
-# 4. Create a department, then a doctor user + doctor profile,
-#    then a patient, then book an appointment, etc.
-```
 
 ## Modules included (all 19, built together)
 

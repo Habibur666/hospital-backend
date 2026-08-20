@@ -1,0 +1,20 @@
+# Environment variables (contains secrets — NEVER commit this)
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Uploaded files (local dev scratch space)
+uploads/*
+!uploads/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -19,7 +19,7 @@ from flask import g, current_app
 def get_db():
     """Open (or reuse) a PyMySQL connection for the current request."""
     if "db" not in g:
-        g.db = pymysql.connect(
+        connect_args = dict(
             host=current_app.config["DB_HOST"],
             port=current_app.config["DB_PORT"],
             user=current_app.config["DB_USER"],
@@ -28,6 +28,13 @@ def get_db():
             cursorclass=pymysql.cursors.DictCursor,  # rows come back as dicts
             autocommit=True,
         )
+        # Managed MySQL hosts used in production (PlanetScale, Railway,
+        # Aiven, etc.) require an SSL connection. Set DB_SSL=true in your
+        # .env / host's environment variables to turn this on — local
+        # MySQL during development doesn't need it, so it's off by default.
+        if current_app.config.get("DB_SSL"):
+            connect_args["ssl"] = {"ssl": {}}
+        g.db = pymysql.connect(**connect_args)
     return g.db
 
 
