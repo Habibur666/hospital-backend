@@ -18,10 +18,17 @@ SAFE_COLUMNS = "id, first_name, last_name, email, phone, role, is_active, last_l
 @role_required("super_admin", "hospital_admin")
 def create_staff_user():
     """
-    Admin-only way to create accounts for any role (doctor, receptionist,
-    pharmacist, lab_technician, cashier, or another admin). Public
-    self-registration (POST /auth/register) only ever creates patients —
-    this is the one place staff accounts should be created from.
+    Admin-only way to create accounts for non-doctor staff roles
+    (receptionist, pharmacist, lab_technician, cashier, or another admin).
+
+    Doctors are NOT created here — they have an extra "doctors" profile
+    table (specialty, fee, department...), so they're created in one
+    combined step via POST /doctors instead, which creates the login
+    account AND the doctor profile together. That avoids ever ending up
+    with a "doctor" user that has no matching profile.
+
+    Public self-registration (POST /auth/register) only ever creates
+    patients — this endpoint is for every other staff role.
     """
     data = request.get_json() or {}
     required_fields = ["first_name", "last_name", "email", "password", "role"]
@@ -29,6 +36,8 @@ def create_staff_user():
         if not data.get(field):
             return fail(f"'{field}' is required", 422)
 
+    if data["role"] == "doctor":
+        return fail("Create doctors from the Doctors page instead (POST /doctors) — it needs extra profile details.", 422)
     if data["role"] not in ROLES:
         return fail(f"role must be one of {ROLES}", 422)
     if len(data["password"]) < 8:
@@ -99,6 +108,9 @@ def update_user(user_id):
     user = query_one("SELECT id FROM users WHERE id = %s", (user_id,))
     if not user:
         return fail("User not found", 404)
+
+    if data.get("role") == "doctor":
+        return fail("Can't change a role to 'doctor' here — create a new doctor from the Doctors page instead, which sets up their profile at the same time.", 422)
 
     fields, params = [], []
     for field in ["first_name", "last_name", "phone", "role"]:

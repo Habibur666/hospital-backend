@@ -1,6 +1,7 @@
 """
 Doctor Management Module — doctor profiles, availability, appointments, consultation history.
 """
+import bcrypt
 from flask import Blueprint, request
 from app.db import query_all, query_one, execute
 from app.helpers import (
@@ -54,31 +55,54 @@ def list_doctors():
 @doctors_bp.route("", methods=["POST"])
 @role_required("super_admin", "hospital_admin")
 def create_doctor_profile():
-    """Attach doctor-specific details to an existing user account (role='doctor')."""
+    """
+    Creates a brand new doctor in ONE step — both the login account (with
+    role='doctor') and the doctor-specific profile (specialty, fee, etc.)
+    at the same time. Admins never need to pick an existing user; they
+    just fill in one form with everything.
+    """
     data = request.get_json() or {}
-    if not data.get("user_id"):
-        return fail("'user_id' is required", 422)
+    required_fields = ["first_name", "last_name", "email", "password"]
+    for field in required_fields:
+        if not data.get(field):
+            return fail(f"'{field}' is required", 422)
 
-    user = query_one("SELECT id, role FROM users WHERE id = %s", (data["user_id"],))
-    if not user:
-        return fail("User not found", 404)
-    if user["role"] != "doctor":
-        return fail("This user does not have the 'doctor' role", 422)
+    if len(data["password"]) < 8:
+        return fail("Password must be at least 8 characters long", 422)
 
-    existing = query_one("SELECT id FROM doctors WHERE user_id = %s", (data["user_id"],))
+    existing = query_one("SELECT id FROM users WHERE email = %s", (data["email"],))
     if existing:
-        return fail("This user already has a doctor profile", 409)
+        return fail("A user with this email already exists", 409)
 
-    doctor_id = execute(
+    password_hash = bcrypt.hashpw(data["password"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    # Step 1: create the login account
+    user_id = execute(
         """
-        INSERT INTO doctors (user_id, department_id, specialty, qualification, experience_years, consultation_fee)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO users (first_name, last_name, email, phone, password_hash, role)
+        VALUES (%s, %s, %s, %s, %s, 'doctor')
         """,
-        (data["user_id"], data.get("department_id"), data.get("specialty"),
-         data.get("qualification"), data.get("experience_years"), data.get("consultation_fee")),
+        (data["first_name"], data["last_name"], data["email"], data.get("phone"), password_hash),
     )
+
+    # Step 2: create the doctor profile linked to that new account.
+    # If this fails for any reason, delete the user we just created instead
+    # of leaving a broken "doctor" account with no profile behind.
+    try:
+        doctor_id = execute(
+            """
+            INSERT INTO doctors (user_id, department_id, specialty, qualification, experience_years, consultation_fee)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (user_id, data.get("department_id"), data.get("specialty"),
+             data.get("qualification"), data.get("experience_years"), data.get("consultation_fee")),
+        )
+    except Exception:
+        execute("DELETE FROM users WHERE id = %s", (user_id,))
+        return fail("Could not create the doctor profile. Please try again.", 500)
+
     log_action(get_jwt_identity(), "create_doctor_profile", "doctor", doctor_id)
-    return ok(query_one(DOCTOR_SELECT + " WHERE d.id = %s", (doctor_id,)), "Doctor profile created", 201)
+    return ok(query_one(DOCTOR_SELECT + " WHERE d.id = %s", (doctor_id,)), "Doctor account created", 201)
 
 
 @doctors_bp.route("/me", methods=["GET"])
