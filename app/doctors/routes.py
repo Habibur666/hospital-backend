@@ -117,6 +117,57 @@ def get_my_doctor_profile():
     return ok(row)
 
 
+@doctors_bp.route("/me/summary", methods=["GET"])
+@role_required("doctor")
+def my_dashboard_summary():
+    """
+    A doctor's own quick stats for their dashboard — today's appointments,
+    how many are still pending approval, and their next few upcoming
+    appointments. Deliberately separate from /dashboard/summary (which is
+    hospital-wide revenue data, admin-only) — a doctor should only ever
+    see numbers about their own patients.
+    """
+    own_doctor_id = query_one("SELECT id FROM doctors WHERE user_id = %s", (get_jwt_identity(),))
+    if not own_doctor_id:
+        return fail("No doctor profile is linked to your account yet.", 404)
+    doctor_id = own_doctor_id["id"]
+
+    todays_appointments = query_one(
+        "SELECT COUNT(*) AS total FROM appointments WHERE doctor_id = %s AND appointment_date = CURDATE()",
+        (doctor_id,),
+    )["total"]
+
+    pending_appointments = query_one(
+        "SELECT COUNT(*) AS total FROM appointments WHERE doctor_id = %s AND status = 'pending'",
+        (doctor_id,),
+    )["total"]
+
+    total_patients_seen = query_one(
+        "SELECT COUNT(DISTINCT patient_id) AS total FROM appointments WHERE doctor_id = %s AND status = 'completed'",
+        (doctor_id,),
+    )["total"]
+
+    upcoming = query_all(
+        """
+        SELECT a.*, p.first_name AS patient_first_name, p.last_name AS patient_last_name
+        FROM appointments a
+        JOIN patients p ON p.id = a.patient_id
+        WHERE a.doctor_id = %s AND a.appointment_date >= CURDATE()
+              AND a.status IN ('pending', 'approved')
+        ORDER BY a.appointment_date, a.appointment_time
+        LIMIT 5
+        """,
+        (doctor_id,),
+    )
+
+    return ok({
+        "todays_appointments": todays_appointments,
+        "pending_appointments": pending_appointments,
+        "total_patients_seen": total_patients_seen,
+        "upcoming_appointments": upcoming,
+    })
+
+
 @doctors_bp.route("/<int:doctor_id>", methods=["GET"])
 @login_required
 def get_doctor(doctor_id):
