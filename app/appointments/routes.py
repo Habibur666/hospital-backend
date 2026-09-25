@@ -2,6 +2,7 @@
 Appointment Management Module — book, cancel, reschedule, approve, reject, queue.
 """
 from flask import Blueprint, request
+from pymysql.err import IntegrityError
 from app.db import query_all, query_one, execute
 from app.helpers import (
     ok, fail, get_pagination_params, paginated,
@@ -61,17 +62,19 @@ def list_appointments():
 def book_appointment():
     data = request.get_json() or {}
     required_fields = ["patient_id", "doctor_id", "appointment_date", "appointment_time"]
-    for field in required_fields:
-        if not data.get(field):
-            return fail(f"'{field}' is required", 422)
-
-    # A patient can only ever book for THEMSELVES — override whatever
-    # patient_id was sent with their own, so this can't be spoofed.
+    # A patient can only ever book for THEMSELVES — fill in their own
+    # patient_id here, BEFORE the required-fields check below, so a
+    # patient never needs to (and can't be tricked into) supplying someone
+    # else's patient_id.
     if get_jwt().get("role") == "patient":
         own_patient_id = get_own_patient_id(get_jwt_identity())
         if not own_patient_id:
             return fail("No patient profile is linked to your account yet.", 404)
         data["patient_id"] = own_patient_id
+
+    for field in required_fields:
+        if not data.get(field):
+            return fail(f"'{field}' is required", 422)
 
     # Work out the next queue number for that doctor on that day
     row = query_one(
@@ -80,14 +83,23 @@ def book_appointment():
     )
     queue_number = row["cnt"] + 1
 
-    appointment_id = execute(
-        """
-        INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, reason, queue_number)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """,
-        (data["patient_id"], data["doctor_id"], data["appointment_date"],
-         data["appointment_time"], data.get("reason"), queue_number),
-    )
+    try:
+        appointment_id = execute(
+            """
+            INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, reason, queue_number)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (data["patient_id"], data["doctor_id"], data["appointment_date"],
+             data["appointment_time"], data.get("reason"), queue_number),
+        )
+    except IntegrityError:
+        # The database itself rejected this — someone else booked this exact
+        # doctor + date + time a moment ago (see the unique index on
+        # active_slot_key in the appointments table). This is what actually
+        # prevents two people double-booking the same slot, even if both
+        # requests land at the same instant.
+        return fail("This time slot was just booked by someone else. Please pick a different time.", 409)
+
     log_action(get_jwt_identity(), "book_appointment", "appointment", appointment_id)
     return ok(query_one("SELECT * FROM appointments WHERE id = %s", (appointment_id,)), "Appointment booked", 201)
 
@@ -189,10 +201,14 @@ def reschedule_appointment(appointment_id):
     if denied:
         return denied
 
-    execute(
-        "UPDATE appointments SET appointment_date = %s, appointment_time = %s, status = 'rescheduled' WHERE id = %s",
-        (data["appointment_date"], data["appointment_time"], appointment_id),
-    )
+    try:
+        execute(
+            "UPDATE appointments SET appointment_date = %s, appointment_time = %s, status = 'rescheduled' WHERE id = %s",
+            (data["appointment_date"], data["appointment_time"], appointment_id),
+        )
+    except IntegrityError:
+        return fail("That time slot is already taken for this doctor. Please pick a different time.", 409)
+
     log_action(get_jwt_identity(), "reschedule_appointment", "appointment", appointment_id)
     return ok(query_one("SELECT * FROM appointments WHERE id = %s", (appointment_id,)), "Appointment rescheduled")
 

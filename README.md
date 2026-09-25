@@ -125,6 +125,17 @@ The app factory (`create_app()`) was tested and imports cleanly with
 **93 registered routes** across all 19 modules, and the health check /
 validation error handling were smoke-tested successfully.
 
+## Helper Scripts
+
+| Script | What it does | When to run it |
+|---|---|---|
+| `setup_db.py` | Creates all tables from `docs/schema.sql`, then optionally creates a Super Admin / Hospital Admin account | Once, when setting up a brand new database |
+| `seed_data.py` | Fills the database with realistic sample data (doctors, patients, appointments, medicines...) across every module | Optional, for demoing/testing |
+| `link_patient_profile.py` | Links an existing patient login (created before the auto-link fix) to a patient profile | Only for accounts registered before that fix — new registrations link automatically |
+| `migrate_prevent_double_booking.py` | Adds a database-level safeguard so two patients can never book the same doctor at the same date+time, even if both requests arrive at the same instant | Once, if your database was created before this fix existed — new databases already have it via `schema.sql` |
+
+All scripts read the same `.env` file as the app and use plain PyMySQL — no `mysql` command-line tool required.
+
 ## Notes / what you'd still want before production
 - Add a proper migrations tool (e.g. Alembic-style manual `.sql` migration
   files) instead of one big `schema.sql` as the project grows.

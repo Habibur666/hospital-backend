@@ -90,8 +90,21 @@ CREATE TABLE IF NOT EXISTS appointments (
     reason        VARCHAR(255) NULL,
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    -- This generated column is NULL for cancelled/rejected appointments
+    -- (so those don't block the slot), and a doctor+date+time fingerprint
+    -- otherwise. The UNIQUE index on it means MySQL itself refuses a
+    -- second active appointment in the same slot — this is what actually
+    -- stops two patients double-booking the same doctor/time, even if
+    -- both requests arrive at the exact same moment (a plain "check then
+    -- insert" in application code can't fully prevent that race).
+    active_slot_key VARCHAR(60) GENERATED ALWAYS AS (
+        CASE WHEN status IN ('cancelled', 'rejected') THEN NULL
+        ELSE CONCAT(doctor_id, '_', appointment_date, '_', appointment_time)
+        END
+    ) STORED,
     FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
-    FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE
+    FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_active_appointment_slot (active_slot_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS consultation_notes (
